@@ -8,39 +8,39 @@ const auth = require('../../middleware/auth');
 const role = require('../../middleware/role');
 const store = require('../../utils/store');
 const { ROLES } = require('../../constants');
+const { uploadImage } = require('../../utils/uploadImage');
 
-router.post('/add', auth, role.check(ROLES.Admin), (req, res) => {
-  const name = req.body.name;
-  const description = req.body.description;
-  const products = req.body.products;
-  const isActive = req.body.isActive;
+router.post('/add', auth, role.check(ROLES.Admin), async (req, res) => {
+  try {
+    const { name, description, products, isActive, image } = req.body;
 
-  if (!description || !name) {
-    return res
-      .status(400)
-      .json({ error: 'You must enter description & name.' });
-  }
-
-  const category = new Category({
-    name,
-    description,
-    products,
-    isActive
-  });
-
-  category.save((err, data) => {
-    if (err) {
-      return res.status(400).json({
-        error: 'Your request could not be processed. Please try again.'
-      });
+    if (!name) {
+      return res.status(400).json({ error: 'You must enter a name.' });
     }
+
+    // Base64 from the admin becomes a Cloudinary URL before it ever reaches Mongo.
+    const imageUrl = await uploadImage(image, 'categories');
+
+    const category = new Category({
+      name,
+      description,
+      products,
+      isActive,
+      image: imageUrl
+    });
+
+    const data = await category.save();
 
     res.status(200).json({
       success: true,
       message: `Category has been added successfully!`,
       category: data
     });
-  });
+  } catch (error) {
+    res.status(400).json({
+      error: 'Your request could not be processed. Please try again.'
+    });
+  }
 });
 
 // fetch store categories api
@@ -112,13 +112,20 @@ router.put('/:id', auth, role.check(ROLES.Admin), async (req, res) => {
       return res.status(400).json({ error: 'Slug is already in use.' });
     }
 
-    await Category.findOneAndUpdate(query, update, {
+    // Only touch the image when one was sent, so an edit that omits it keeps
+    // the existing picture instead of clearing it.
+    if (update && typeof update.image !== 'undefined') {
+      update.image = await uploadImage(update.image, 'categories');
+    }
+
+    const updated = await Category.findOneAndUpdate(query, update, {
       new: true
     });
 
     res.status(200).json({
       success: true,
-      message: 'Category has been updated successfully!'
+      message: 'Category has been updated successfully!',
+      category: updated
     });
   } catch (error) {
     res.status(400).json({

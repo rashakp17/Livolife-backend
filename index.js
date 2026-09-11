@@ -21,14 +21,24 @@ app.use(
 );
 app.use(cors());
 
-setupDB();
 require('./config/passport')(app);
 app.use(routes);
 
-const server = app.listen(port, () => {
-  console.log(
-    `${chalk.green('✓')} ${chalk.blue(
-      `Listening on port ${port}. Visit http://localhost:${port}/ in your browser.`
-    )}`
-  );
-});
+// Only start serving once the database is actually reachable. Starting without
+// it produces a server that answers non-DB routes and hangs on everything else.
+setupDB()
+  .then(() => {
+    app.listen(port, () => {
+      console.log(
+        `${chalk.green('✓')} ${chalk.blue(
+          `Listening on port ${port}. Visit http://localhost:${port}/ in your browser.`
+        )}`
+      );
+    });
+  })
+  .catch(error => {
+    console.error(
+      `${chalk.red('✗')} FATAL: could not connect to MongoDB — ${error.message}`
+    );
+    process.exit(1);
+  });

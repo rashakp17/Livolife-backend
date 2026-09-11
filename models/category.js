@@ -25,9 +25,12 @@ const CategorySchema = new Schema({
     slug: 'name',
     unique: true
   },
+  // Cloudinary secure_url. Stored as a URL, never as binary — keeping image
+  // bytes in the document is what bloats the product responses to tens of MB.
   image: {
-    data: Buffer,
-    contentType: String
+    type: String,
+    trim: true,
+    default: ''
   },
   description: {
     type: String,
