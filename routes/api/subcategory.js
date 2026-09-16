@@ -4,6 +4,7 @@ const router = express.Router();
 // Bring in Models & Utils
 const SubCategory = require('../../models/subcategory');
 const Category = require('../../models/category');
+const Product = require('../../models/product');
 const auth = require('../../middleware/auth');
 const role = require('../../middleware/role');
 const store = require('../../utils/store');
@@ -224,6 +225,13 @@ router.delete(
   async (req, res) => {
     try {
       const subCategory = await SubCategory.deleteOne({ _id: req.params.id });
+
+      // Untag the products that pointed here, so they stay in their category
+      // rather than filtering under a subcategory that no longer exists.
+      await Product.updateMany(
+        { subCategory: req.params.id },
+        { $set: { subCategory: null } }
+      );
 
       res.status(200).json({
         success: true,
