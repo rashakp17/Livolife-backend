@@ -3,6 +3,7 @@ const router = require('express').Router();
 const authRoutes = require('./auth');
 const productRoutes = require('./product');
 const categoryRoutes = require('./category');
+const subCategoryRoutes = require('./subcategory');
 
 const bannerRoutes = require('./banner');
 
@@ -23,6 +24,9 @@ router.use('/product', productRoutes);
 
 // category routes
 router.use('/category', categoryRoutes);
+
+// subcategory routes
+router.use('/subcategory', subCategoryRoutes);
 
 // brand routes
 // router.use('/brand', brandRoutes);

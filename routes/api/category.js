@@ -4,6 +4,7 @@ const passport = require('passport');
 
 // Bring in Models & Utils
 const Category = require('../../models/category');
+const SubCategory = require('../../models/subcategory');
 const auth = require('../../middleware/auth');
 const role = require('../../middleware/role');
 const store = require('../../utils/store');
@@ -171,6 +172,10 @@ router.delete(
   role.check(ROLES.Admin),
   async (req, res) => {
     try {
+      // Drop the category's subcategories with it — a subcategory whose parent
+      // is gone can never be reached from the store or listed in the admin.
+      await SubCategory.deleteMany({ category: req.params.id });
+
       const product = await Category.deleteOne({ _id: req.params.id });
 
       res.status(200).json({
