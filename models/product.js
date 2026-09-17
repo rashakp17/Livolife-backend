@@ -22,9 +22,6 @@ const ProductSchema = new Schema({
   slug: { type: String, slug: 'name', unique: true },
   description: { type: String, trim: true },
   category: { type: Schema.Types.ObjectId, ref: 'Category', default: null },
-  // Optional narrowing of `category`. The routes reject a subcategory whose
-  // parent is not the product's own category, so the two can never disagree.
-  subCategory: { type: Schema.Types.ObjectId, ref: 'SubCategory', default: null },
   brand: { type: Schema.Types.ObjectId, ref: 'Brand', default: null },
   // GST percentage applied on top of the variant price. Prices are stored and
   // displayed tax-exclusive; tax is only added at the cart.

@@ -3,20 +3,11 @@ const router = express.Router();
 
 const Product = require('../../models/product');
 const Category = require('../../models/category');
-const SubCategory = require('../../models/subcategory');
 const auth = require('../../middleware/auth');
 const role = require('../../middleware/role');
 const { ROLES } = require('../../constants');
 const cloudinary = require('../../config/cloudinary');
 
-/**
- * Checks a requested subcategory against the product's category.
- *
- * Returns an error string to send back, or null when the pairing is fine.
- * Guards the case that silently breaks shop filtering: a product tagged with a
- * subcategory belonging to some *other* category, which then shows up under a
- * category filter it has nothing to do with.
- */
 /**
  * Normalises a submitted GST percentage.
  *
@@ -35,22 +26,6 @@ const parseTaxRate = rate => {
   return { value: parsed };
 };
 
-const validateSubCategory = async (subCategoryId, categoryId) => {
-  if (!subCategoryId) return null;
-
-  const subCategoryDoc = await SubCategory.findOne({ _id: subCategoryId });
-
-  if (!subCategoryDoc) return 'No Subcategory found.';
-
-  if (!categoryId) return 'You must select a category for this subcategory.';
-
-  if (String(subCategoryDoc.category) !== String(categoryId)) {
-    return 'That subcategory does not belong to the selected category.';
-  }
-
-  return null;
-};
-
 // GET all products (admin)
 // router.get('/', async (req, res) => {
 //   try {
@@ -67,7 +42,6 @@ router.get('/', async (req, res) => {
 
     const products = await Product.find({})
       .populate('category', 'name')
-      .populate('subCategory', 'name')
       .limit(limit)
       .skip((page - 1) * limit);
 
@@ -79,7 +53,7 @@ router.get('/', async (req, res) => {
 // GET product by slug (public storefront) - MUST come before /:id
 router.get('/item/:slug', async (req, res) => {
   try {
-    const product = await Product.findOne({ slug: req.params.slug, isActive: true }).populate('category', 'name').populate('subCategory', 'name');
+    const product = await Product.findOne({ slug: req.params.slug, isActive: true }).populate('category', 'name');
     if (!product) return res.status(404).json({ message: 'No product found.' });
     res.status(200).json({ product });
   } catch (error) {
@@ -134,7 +108,7 @@ router.get('/item/:slug', async (req, res) => {
 
 router.post('/add', auth, role.check(ROLES.Admin, ROLES.Merchant, ROLES.Member), async (req, res) => {
   try {
-    const { name, description, category, subCategory, taxRate, variants } = req.body;
+    const { name, description, category, taxRate, variants } = req.body;
 
     if (!name || !description) {
       return res.status(400).json({ error: 'Name and description are required.' });
@@ -142,12 +116,6 @@ router.post('/add', auth, role.check(ROLES.Admin, ROLES.Merchant, ROLES.Member),
 
     if (!variants || !Array.isArray(variants) || variants.length === 0) {
       return res.status(400).json({ error: 'At least one variant is required.' });
-    }
-
-    const subCategoryError = await validateSubCategory(subCategory, category);
-
-    if (subCategoryError) {
-      return res.status(400).json({ error: subCategoryError });
     }
 
     const tax = parseTaxRate(taxRate);
@@ -180,7 +148,6 @@ router.post('/add', auth, role.check(ROLES.Admin, ROLES.Merchant, ROLES.Member),
       name,
       description,
       category: category || null,
-      subCategory: subCategory || null,
       taxRate: tax.value ?? 0,
       variants: updatedVariants
     });
@@ -189,12 +156,6 @@ router.post('/add', auth, role.check(ROLES.Admin, ROLES.Merchant, ROLES.Member),
 
     if (category) {
       await Category.findByIdAndUpdate(category, { $push: { products: saved._id } });
-    }
-
-    if (subCategory) {
-      await SubCategory.findByIdAndUpdate(subCategory, {
-        $push: { products: saved._id }
-      });
     }
 
     res.status(200).json({
@@ -211,7 +172,7 @@ router.post('/add', auth, role.check(ROLES.Admin, ROLES.Merchant, ROLES.Member),
 // PUT update product
 router.put('/update/:id', auth, role.check(ROLES.Admin, ROLES.Merchant, ROLES.Member), async (req, res) => {
   try {
-    const { name, description, category, subCategory, taxRate, variants, isActive } = req.body;
+    const { name, description, category, taxRate, variants, isActive } = req.body;
 
     const tax = parseTaxRate(taxRate);
 
@@ -235,41 +196,11 @@ router.put('/update/:id', auth, role.check(ROLES.Admin, ROLES.Merchant, ROLES.Me
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ error: 'Product not found.' });
 
-    // Validate against the category the product will end up in, not the one it
-    // had, so moving category and subcategory in a single request still checks out.
-    const nextCategory =
-      category !== undefined ? category || null : product.category;
-
-    if (subCategory !== undefined) {
-      const subCategoryError = await validateSubCategory(
-        subCategory,
-        nextCategory
-      );
-
-      if (subCategoryError) {
-        return res.status(400).json({ error: subCategoryError });
-      }
-    }
-
-    const previousSubCategory = product.subCategory;
-
     if (name !== undefined) product.name = name;
     if (description !== undefined) product.description = description;
     if (category !== undefined) product.category = category || null;
     if (isActive !== undefined) product.isActive = isActive;
     if (tax.value !== undefined) product.taxRate = tax.value;
-
-    if (subCategory !== undefined) {
-      product.subCategory = subCategory || null;
-    } else if (
-      category !== undefined &&
-      product.subCategory &&
-      (await validateSubCategory(product.subCategory, nextCategory))
-    ) {
-      // Category moved and the old subcategory doesn't live there — drop it
-      // rather than leave the product filed under an unrelated category's child.
-      product.subCategory = null;
-    }
     // if (variants !== undefined) product.variants = variants;
     if (variants !== undefined) {
   const updatedVariants = [];
@@ -299,21 +230,6 @@ router.put('/update/:id', auth, role.check(ROLES.Admin, ROLES.Merchant, ROLES.Me
 
     const updated = await product.save();
 
-    // Keep both subcategories' `products` arrays honest when a product moves.
-    if (String(previousSubCategory || '') !== String(product.subCategory || '')) {
-      if (previousSubCategory) {
-        await SubCategory.findByIdAndUpdate(previousSubCategory, {
-          $pull: { products: updated._id }
-        });
-      }
-
-      if (product.subCategory) {
-        await SubCategory.findByIdAndUpdate(product.subCategory, {
-          $addToSet: { products: updated._id }
-        });
-      }
-    }
-
     res.status(200).json({ success: true, message: 'Product updated successfully!', product: updated });
   } catch (error) {
     res.status(400).json({ error: 'Your request could not be processed. Please try again.' });
@@ -324,11 +240,6 @@ router.put('/update/:id', auth, role.check(ROLES.Admin, ROLES.Merchant, ROLES.Me
 router.delete('/delete/:id', auth, role.check(ROLES.Admin, ROLES.Merchant, ROLES.Member), async (req, res) => {
   try {
     await Product.deleteOne({ _id: req.params.id });
-    // Don't leave the deleted id behind in a subcategory's products array.
-    await SubCategory.updateMany(
-      { products: req.params.id },
-      { $pull: { products: req.params.id } }
-    );
     res.status(200).json({ success: true, message: 'Product deleted successfully!' });
   } catch (error) {
     res.status(400).json({ error: 'Your request could not be processed. Please try again.' });
@@ -338,7 +249,7 @@ router.delete('/delete/:id', auth, role.check(ROLES.Admin, ROLES.Merchant, ROLES
 // GET single product by id (admin) - MUST be last to avoid shadowing other /:id routes
 router.get('/:id',async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id).populate('category', 'name').populate('subCategory', 'name');
+    const product = await Product.findById(req.params.id).populate('category', 'name');
     if (!product) return res.status(404).json({ message: 'No product found.' });
     res.status(200).json({ product });
   } catch (error) {
