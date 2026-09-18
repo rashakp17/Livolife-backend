@@ -26,6 +26,22 @@ const parseTaxRate = rate => {
   return { value: parsed };
 };
 
+/**
+ * An offer price is optional (0/empty = no offer), but when given it has to
+ * undercut the actual price — otherwise the "% off" shown would be nonsense.
+ * Returns an error message, or null when every variant is fine.
+ */
+const validateOfferPrices = variants => {
+  for (const v of variants) {
+    const offer = Number(v.offerPrice) || 0;
+    if (offer < 0) return 'Offer price cannot be negative.';
+    if (offer > 0 && offer >= Number(v.price)) {
+      return 'Offer price must be lower than the actual price.';
+    }
+  }
+  return null;
+};
+
 // GET all products (admin)
 // router.get('/', async (req, res) => {
 //   try {
@@ -124,6 +140,11 @@ router.post('/add', auth, role.check(ROLES.Admin, ROLES.Merchant, ROLES.Member),
       return res.status(400).json({ error: tax.error });
     }
 
+    const offerError = validateOfferPrices(variants);
+    if (offerError) {
+      return res.status(400).json({ error: offerError });
+    }
+
     // Upload images to Cloudinary
     const updatedVariants = [];
 
@@ -191,6 +212,11 @@ router.put('/update/:id', auth, role.check(ROLES.Admin, ROLES.Merchant, ROLES.Me
       }
       const defaultCount = variants.filter(v => v.isDefault).length;
       if (defaultCount === 0) variants[0].isDefault = true;
+
+      const offerError = validateOfferPrices(variants);
+      if (offerError) {
+        return res.status(400).json({ error: offerError });
+      }
     }
 
     const product = await Product.findById(req.params.id);

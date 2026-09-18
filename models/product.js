@@ -8,7 +8,10 @@ const VariantSchema = new Schema({
   // Optional: the storefront sells items that have no colour choice, and the
   // admin no longer asks for one. Kept so existing products keep their value.
   color: { type: String, trim: true, default: '' },
+  // Actual (list) price. When offerPrice is set and lower, the storefront
+  // charges offerPrice and shows this one struck through with the % off.
   price: { type: Number, required: true },
+  offerPrice: { type: Number, default: 0, min: 0 },
   stock: { type: Number, default: 0 },
   images: [{ type: String }],
   // scalable: add sizes/discounts here later
